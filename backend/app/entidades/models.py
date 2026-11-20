@@ -25,7 +25,7 @@ class Puesto(Base):
     empresa: Mapped[str] = mapped_column(String(100))
     eliminado: Mapped[bool] = mapped_column(Boolean, default=False)  # fuera del DER (baja lógica, CU011)
 
-    caracteristicas: Mapped[list["CaracteristicaPuesto"]] = relationship(back_populates="puesto")
+    caracteristicas: Mapped[list["CaracteristicaPuesto"]] = relationship(back_populates="puesto", cascade="all, delete-orphan")
     evaluaciones: Mapped[list["Evaluacion"]] = relationship(back_populates="puesto")
 
 
@@ -70,7 +70,9 @@ class OpcionRespuesta(Base):
     descripcion: Mapped[str | None] = mapped_column(String(300))
     eliminado: Mapped[bool] = mapped_column(Boolean, default=False)  # fuera del DER (CU031)
 
-    items: Mapped[list["ItemOpcion"]] = relationship(back_populates="opcion", order_by="ItemOpcion.orden")
+    items: Mapped[list["ItemOpcion"]] = relationship(
+        back_populates="opcion", order_by="ItemOpcion.orden", cascade="all, delete-orphan"
+    )
 
 
 class ItemOpcion(Base):
@@ -94,7 +96,9 @@ class Pregunta(Base):
 
     factor: Mapped[Factor] = relationship(back_populates="preguntas")
     opcion_respuesta: Mapped[OpcionRespuesta] = relationship()
-    ponderaciones: Mapped[list["PonderacionItemPregunta"]] = relationship(back_populates="pregunta")
+    ponderaciones: Mapped[list["PonderacionItemPregunta"]] = relationship(
+        back_populates="pregunta", order_by="PonderacionItemPregunta.orden", cascade="all, delete-orphan"
+    )
 
 
 class PonderacionItemPregunta(Base):
@@ -152,10 +156,43 @@ class Cuestionario(Base):
 
     evaluacion: Mapped[Evaluacion] = relationship(back_populates="cuestionarios")
     candidato: Mapped[Candidato] = relationship()
+    preguntas: Mapped[list["PreguntaCuestionario"]] = relationship(order_by="PreguntaCuestionario.numero_bloque")
+    respuestas: Mapped[list["RespuestaCandidato"]] = relationship(
+        primaryjoin="Cuestionario.id_cuestionario == foreign(RespuestaCandidato.id_cuestionario)"
+    )
+    puntajes_competencia: Mapped[list["PuntajeCompetenciaLogrado"]] = relationship()
+    puntajes_factor: Mapped[list["PuntajeFactorLogrado"]] = relationship()
 
-    def calcular_puntaje(self):
-        """CU026, observación (3): total de factor = suma de ponderaciones / 2; competencia = promedio de sus factores."""
-        raise NotImplementedError("Pendiente: CU026")
+    def calcular_puntaje(self) -> tuple[dict[str, float], dict[str, float]]:
+        """CU026, observación (3).
+
+        Por cada competencia, por cada factor: total del factor = suma de las ponderaciones de las opciones
+        elegidas en las preguntas de ese factor / 2. Total de la competencia = suma de los totales de sus
+        factores / cantidad de factores evaluados.  Devuelve ({factor: total}, {competencia: total}).
+        """
+        ponderacion = {}  # (id_pregunta, orden) -> ponderación
+        factor_de = {}  # id_pregunta -> Factor
+        for pc in self.preguntas:
+            factor_de[pc.id_pregunta] = pc.pregunta.factor
+            for p in pc.pregunta.ponderaciones:
+                ponderacion[(p.id_pregunta, p.orden)] = p.ponderacion
+
+        suma_factor: dict[str, float] = {}
+        competencia_de: dict[str, str] = {}
+        for pc in self.preguntas:
+            f = factor_de[pc.id_pregunta]
+            suma_factor.setdefault(f.codigo, 0.0)
+            competencia_de[f.codigo] = f.competencia_codigo
+        for r in self.respuestas:
+            if r.item_opcion_orden is not None:
+                suma_factor[factor_de[r.id_pregunta].codigo] += ponderacion.get((r.id_pregunta, r.item_opcion_orden), 0.0)
+
+        totales_factor = {f: round(s / 2, 2) for f, s in suma_factor.items()}
+        por_competencia: dict[str, list[float]] = {}
+        for f, total in totales_factor.items():
+            por_competencia.setdefault(competencia_de[f], []).append(total)
+        totales_competencia = {c: round(sum(v) / len(v), 2) for c, v in por_competencia.items()}
+        return totales_factor, totales_competencia
 
 
 class PreguntaCuestionario(Base):
@@ -163,6 +200,8 @@ class PreguntaCuestionario(Base):
     id_pregunta: Mapped[int] = mapped_column(ForeignKey("pregunta.id_pregunta"), primary_key=True)
     id_cuestionario: Mapped[int] = mapped_column(ForeignKey("cuestionario.id_cuestionario"), primary_key=True)
     numero_bloque: Mapped[int] = mapped_column(Integer)
+
+    pregunta: Mapped[Pregunta] = relationship()
 
 
 class RespuestaCandidato(Base):
@@ -183,6 +222,8 @@ class PuntajeCompetenciaLogrado(Base):
     competencia_codigo: Mapped[str] = mapped_column(ForeignKey("competencia.codigo"), primary_key=True)
     puntaje_obtenido: Mapped[float] = mapped_column(Float)
     fecha_evaluacion: Mapped[date] = mapped_column(Date)
+
+    competencia: Mapped[Competencia] = relationship()
 
 
 class PuntajeFactorLogrado(Base):
@@ -211,6 +252,14 @@ class ItemOrdenMerito(Base):
     candidato_nro_candidato: Mapped[str] = mapped_column(ForeignKey("candidato.nro_candidato"))
 
     orden: Mapped[OrdenDeMerito] = relationship(back_populates="items")
+
+
+class ParametroConfiguracion(Base):
+    """Fuera del DER: repositorio de configuraciones del sistema (CU026: instrucciones y parámetros)."""
+
+    __tablename__ = "parametro_configuracion"
+    clave: Mapped[str] = mapped_column(String(50), primary_key=True)
+    valor: Mapped[str] = mapped_column(String(4000))
 
 
 class RegistroAuditoria(Base):

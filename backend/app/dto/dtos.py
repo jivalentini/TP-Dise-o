@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class CaracteristicaPuestoDTO(BaseModel):
     codigo_competencia: str
     nombre_competencia: str | None = None
-    ponderacion_minima_requerida: float
+    ponderacion_minima_requerida: float | None = None
 
 
 class PuestoDTO(BaseModel):
@@ -80,7 +80,7 @@ class FactorDTO(BaseModel):
     codigo: str
     nombre: str
     descripcion: str | None = None
-    nro_orden: int
+    nro_orden: int | None = None
     codigo_competencia: str
     nombre_competencia: str | None = None
 
@@ -92,7 +92,7 @@ class FactorCriteriosDTO(BaseModel):
 
 # ---- Opción de respuesta / Pregunta
 class ItemOpcionDTO(BaseModel):
-    orden: int
+    orden: int | None = None
     descripcion: str
     ponderacion: float | None = None
 
@@ -134,9 +134,24 @@ class BloqueRespuestasDTO(BaseModel):
     respuestas: list[RespuestaDTO] = []
 
 
+class PreguntaCuestionarioDTO(BaseModel):  # CU026: lo que ve el candidato (sin ponderaciones ni competencia/factor)
+    id_pregunta: str
+    enunciado: str
+    opciones: list[ItemOpcionDTO] = []
+
+
 class BloqueDTO(BaseModel):  # secuencia CU026
     nro_bloque: int
-    preguntas: list[PreguntaDTO] = []
+    total_bloques: int
+    preguntas: list[PreguntaCuestionarioDTO] = []
+
+
+class EstadoCuestionarioDTO(BaseModel):  # CU026: qué pantalla presentar
+    accion: str  # "INSTRUCCIONES" | "BLOQUE" | "FINALIZADO"
+    estado: str
+    mensaje: str | None = None
+    instrucciones: str | None = None
+    bloque: BloqueDTO | None = None
 
 
 class ConfiguracionDTO(BaseModel):  # secuencia CU026 (RepositorioConfiguracionDAO)
@@ -145,6 +160,50 @@ class ConfiguracionDTO(BaseModel):  # secuencia CU026 (RepositorioConfiguracionD
     cantidad_maxima_accesos: int
     cantidad_preguntas_por_bloque: int
     instrucciones: str
+
+
+# ---- Generación con IA (CU033 / CU009)
+class GenerarPreguntaIADTO(BaseModel):
+    codigo_competencia: str | None = None
+    codigo_factor: str | None = None
+
+
+class GenerarPuestoIADTO(BaseModel):
+    descripcion: str | None = None
+    empresa: str | None = None
+
+
+# ---- Respuestas genéricas de la interfaz
+class MensajeDTO(BaseModel):
+    mensaje: str
+
+
+class PuedeEliminarDTO(BaseModel):
+    puede: bool
+    mensaje: str
+
+
+# ---- Evaluaciones y candidatos evaluados (CU007 / CU027 / CU028)
+class CandidatoEvaluadoDTO(BaseModel):
+    nro_candidato: str
+    apellido: str
+    nombre: str
+    tipo_documento: str
+    nro_documento: str
+    fecha_finalizacion_cuestionario: datetime | None = None
+
+
+class EvaluacionDTO(BaseModel):
+    id_evaluacion: int
+    fecha_creacion: date
+    estado: str
+    cantidad_cuestionarios: int
+    cantidad_completos: int
+
+
+class OrdenMeritoSolicitudDTO(BaseModel):
+    codigo_puesto: str
+    evaluaciones: list[int] | None = None  # None = TODAS
 
 
 # ---- Exportación (CU007)
@@ -178,6 +237,8 @@ class ItemComparativoDTO(BaseModel):
 class ReporteComparativoDTO(BaseModel):
     nombre_puesto: str
     empresa: str
+    candidato: str | None = None  # "APELLIDO, NOMBRE (DNI 123)"
+    fecha_finalizacion_cuestionario: datetime | None = None
     items: list[ItemComparativoDTO] = []
 
 
@@ -192,9 +253,15 @@ class ItemOrdenMeritoDTO(BaseModel):
     fecha_inicio: datetime | None = None
     fecha_fin_o_ultimo_ingreso: datetime | None = None
     cantidad_accesos: int = 0
+    supera_minimos: bool | None = None  # solo para cuestionarios Completos
 
 
 class OrdenDeMeritoDTO(BaseModel):
     nombre_puesto: str
+    codigo_puesto: str | None = None
+    empresa: str | None = None
     fecha_generacion: date
-    items: list[ItemOrdenMeritoDTO] = []
+    evaluaciones: list[int] = []
+    items: list[ItemOrdenMeritoDTO] = []  # orden de mérito (completos que superan mínimos), por puntaje desc
+    no_alcanzan_minimos: list[ItemOrdenMeritoDTO] = []  # completos que no alcanzan los mínimos
+    otros_por_estado: dict[str, list[ItemOrdenMeritoDTO]] = {}  # resto, agrupado por estado del cuestionario

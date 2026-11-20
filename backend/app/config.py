@@ -18,11 +18,16 @@ class Settings(BaseSettings):
     ldap_user_dn_template: str = "uid={username},ou=people,dc=capitalhumano,dc=com"
 
     # Sistemas externos
+    ia_mode: str = "mock"  # "mock" | "api" (REST propio en ia_base_url) | "anthropic"
     ia_base_url: str = ""
     ia_api_key: str = ""
+    ia_model: str = "claude-sonnet-4-5"
     sistema_candidatos_url: str = ""
     sistema_candidatos_api_key: str = ""
-    impresora_uri: str = ""
+    impresora_uri: str = ""  # nombre de la cola CUPS/IPP; vacío = imprime el navegador
+
+    # CU032 – Proceso batch de finalización de cuestionarios
+    batch_intervalo_minutos: int = 60  # 0 = desactivado (se puede correr con: python -m app.batch)
 
 
 settings = Settings()
